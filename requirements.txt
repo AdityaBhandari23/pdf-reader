@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+python-dotenv
+langchain-google-genai
+langchain-pinecone
+langchain-community
+pypdf
+python-multipart
+mangum
+pydantic
+pinecone-client
