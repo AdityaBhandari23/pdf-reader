@@ -4,9 +4,10 @@ from pathlib import Path
 from typing import List
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.chat_message_histories import DynamoDBChatMessageHistory
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -52,12 +53,17 @@ llm = ChatGoogleGenerativeAI(
 
 class QueryRequest(BaseModel):
     question: str
+    session_id: str
 
 
 @app.post("/upload-pdf")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    session_id: str = Form(...)
+):
     """
     Upload a PDF, process it in BATCHES with delays to avoid 429 Errors.
+    Stores documents in Pinecone with namespace=session_id for user isolation.
     """
     temp_file_path = None
     try:
@@ -79,26 +85,27 @@ async def upload_pdf(file: UploadFile = File(...)):
         )
         chunks = text_splitter.split_documents(documents)
         
-        print(f"Total chunks to process: {len(chunks)}")
+        print(f"Total chunks to process: {len(chunks)} for session_id: {session_id}")
 
-        # --- NEW BATCHING LOGIC STARTS HERE ---
+        # --- BATCHING LOGIC WITH NAMESPACE ISOLATION ---
         batch_size = 5  # Process only 5 chunks at a time
         
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i : i + batch_size]
             print(f"Processing batch {i} to {i + batch_size}...")
             
-            # Upload just this small batch
+            # Upload just this small batch with namespace=session_id for user isolation
             PineconeVectorStore.from_documents(
                 documents=batch,
                 embedding=embeddings,
                 index_name=PINECONE_INDEX_NAME,
-                pinecone_api_key=PINECONE_API_KEY
+                pinecone_api_key=PINECONE_API_KEY,
+                namespace=session_id  # CRITICAL: Isolate user's PDF data
             )
             
             # CRITICAL: Sleep for 2 seconds to let Google's API "cool down"
             time.sleep(2) 
-        # --- NEW BATCHING LOGIC ENDS HERE ---
+        # --- BATCHING LOGIC ENDS HERE ---
         
         # 3. Cleanup
         if temp_file_path and temp_file_path.exists():
@@ -109,7 +116,8 @@ async def upload_pdf(file: UploadFile = File(...)):
             content={
                 "status": "success",
                 "chunks_processed": len(chunks),
-                "message": "PDF processed successfully in batches."
+                "message": "PDF processed successfully in batches.",
+                "session_id": session_id
             }
         )
     
@@ -195,38 +203,88 @@ async def upload_pdf(file: UploadFile = File(...)):
 async def chat(query: QueryRequest):
     """
     Query the RAG system with a question and get an answer with sources.
+    Uses DynamoDB for chat history and namespace isolation for user-specific document search.
     """
     try:
-        # Initialize Pinecone vector store with existing index
+        # Initialize DynamoDB chat message history for this session
+        history = DynamoDBChatMessageHistory(
+            table_name="pdf-chat-history",
+            session_id=query.session_id
+        )
+        
+        # Get existing conversation history
+        history_messages = history.messages
+        
+        # Step 1: Contextualize the question based on chat history
+        rewritten_question = query.question
+        if history_messages:
+            # Build history context for rewriting
+            history_context = "\n".join([
+                f"{'User' if msg.type == 'human' else 'Assistant'}: {msg.content}"
+                for msg in history_messages[-6:]  # Use last 6 messages for context
+            ])
+            
+            rewrite_prompt = f"""Based on the following conversation history, rewrite the user's question to be standalone and explicit.
+If the question is a follow-up (e.g., "What is his email?"), make it explicit (e.g., "What is Aditya's email?").
+
+Conversation History:
+{history_context}
+
+User's Current Question: {query.question}
+
+Rewritten Question (make it explicit and standalone):"""
+            
+            rewrite_response = llm.invoke(rewrite_prompt)
+            rewritten_question = rewrite_response.content if hasattr(rewrite_response, 'content') else str(rewrite_response)
+            rewritten_question = rewritten_question.strip()
+        
+        # Step 2: Initialize Pinecone vector store with namespace isolation
+        # CRITICAL: namespace=session_id ensures we ONLY search this user's documents
         vector_store = PineconeVectorStore(
             index_name=PINECONE_INDEX_NAME,
             embedding=embeddings,
-            pinecone_api_key=PINECONE_API_KEY
+            pinecone_api_key=PINECONE_API_KEY,
+            namespace=query.session_id  # Isolated search for this user
         )
         
-        # Perform similarity search to get top 3 relevant chunks
+        # Step 3: Perform similarity search using the rewritten question
         docs = vector_store.similarity_search(
-            query.question,
+            rewritten_question,
             k=TOP_K_RESULTS
         )
         
         # Extract source texts
         sources = [doc.page_content for doc in docs]
         
-        # Create prompt combining context and question
+        # Step 4: Build context from retrieved documents
         context = "\n\n".join([f"Context {i+1}: {source}" for i, source in enumerate(sources)])
-        prompt = f"""Context:
-{context}
-
-Question: {query.question}
-
-Please answer the question based on the provided context. If the context doesn't contain enough information to answer the question, please say so."""
         
-        # Get response from LLM
+        # Step 5: Build conversation history for the final prompt
+        history_text = ""
+        if history_messages:
+            history_text = "\n\nPrevious Conversation:\n" + "\n".join([
+                f"{'User' if msg.type == 'human' else 'Assistant'}: {msg.content}"
+                for msg in history_messages[-10:]  # Include last 10 messages
+            ])
+        
+        # Step 6: Create final prompt with original question, context, and history
+        prompt = f"""Context from Documents:
+{context}
+{history_text}
+
+Current Question: {query.question}
+
+Please answer the question based on the provided context and conversation history. If the context doesn't contain enough information to answer the question, please say so."""
+        
+        # Step 7: Get response from LLM
         response = llm.invoke(prompt)
         
         # Extract answer text from response
         answer = response.content if hasattr(response, 'content') else str(response)
+        
+        # Step 8: Save the interaction to DynamoDB
+        history.add_user_message(query.question)
+        history.add_ai_message(answer)
         
         return JSONResponse(
             status_code=200,
