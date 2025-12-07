@@ -8,6 +8,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.chat_message_histories import DynamoDBChatMessageHistory
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -298,6 +299,50 @@ Please answer the question based on the provided context and conversation histor
         raise HTTPException(
             status_code=500,
             detail=f"Error processing chat query: {str(e)}"
+        )
+
+
+@app.get("/chat-history/{session_id}")
+async def get_chat_history(session_id: str):
+    """
+    Retrieve chat history for a given session_id from DynamoDB.
+    Returns a list of messages with role and content.
+    """
+    try:
+        # Initialize DynamoDB chat message history for this session
+        history = DynamoDBChatMessageHistory(
+            table_name="pdf-chat-history",
+            session_id=session_id
+        )
+        
+        # Get all messages from history
+        history_messages = history.messages
+        
+        # Convert LangChain messages to JSON format
+        messages = []
+        for msg in history_messages:
+            if isinstance(msg, HumanMessage):
+                messages.append({
+                    "role": "user",
+                    "content": msg.content,
+                    "sources": []  # Sources are not stored in history
+                })
+            elif isinstance(msg, AIMessage):
+                messages.append({
+                    "role": "assistant",
+                    "content": msg.content,
+                    "sources": []  # Sources are not stored in history
+                })
+        
+        return JSONResponse(
+            status_code=200,
+            content=messages
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving chat history: {str(e)}"
         )
 
 

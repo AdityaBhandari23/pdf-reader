@@ -57,9 +57,31 @@ def login_screen():
             # Start chatting button
             if st.button("Start Chatting", type="primary", use_container_width=True):
                 if email and email.strip():
-                    st.session_state.session_id = email.strip()
+                    email_clean = email.strip()
+                    st.session_state.session_id = email_clean
                     st.session_state.logged_in = True
-                    st.session_state.messages = []  # Clear any previous messages
+                    
+                    # Load chat history from backend
+                    try:
+                        with st.spinner("Loading your chat history..."):
+                            response = requests.get(
+                                f"{BACKEND_URL}/chat-history/{email_clean}",
+                                timeout=10
+                            )
+                            
+                            if response.status_code == 200:
+                                history = response.json()
+                                st.session_state.messages = history
+                            else:
+                                # If no history exists or error, start with empty messages
+                                st.session_state.messages = []
+                    except requests.exceptions.ConnectionError:
+                        # Backend not available, start with empty messages
+                        st.session_state.messages = []
+                    except Exception as e:
+                        # Any other error, start with empty messages
+                        st.session_state.messages = []
+                    
                     st.rerun()
                 else:
                     st.error("Please enter a valid email address")
