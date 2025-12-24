@@ -1,0 +1,136 @@
+The Learning Roadmap (15-20 Hours Total)
+Day 1: The Core Concept - Embeddings & Vector DBs (4 Hours)
+Goal: Understand the "Magic" of how the computer understands text.
+
+Concepts to Master:
+
+Embeddings: How does "King - Man + Woman = Queen" work in math?
+
+Vectors: Imagine a graph with X, Y, and Z axes. Now imagine it with 768 axes.
+
+Cosine Similarity: How do we measure the angle between two lines to see if they are related?
+
+Pinecone: What is an "Index"?
+
+Study Material:
+
+Video: [Visualizing Word Embeddings (StatQuest)] - Search this on YouTube. It is the gold standard.
+
+Read: Pinecone Learning Center (Their generic articles are amazing).
+
+Interview Question: "Why did you use a Vector Database instead of MySQL?"
+
+Answer: "MySQL searches for exact keywords. Vector DBs search for meaning. If I search 'sick', MySQL looks for the word 'sick'. Pinecone finds 'ill', 'unwell', and 'fever' because they are mathematically close."
+
+Day 2: The Workflow - RAG & Chunking (3 Hours)
+Goal: Understand why we chop the PDF into pieces.
+
+Concepts to Master:
+
+RAG (Retrieval Augmented Generation): The "Open Book Exam" analogy.
+
+Chunking: Why did we use chunk_size=1000? (Token limits).
+
+Overlap: Why chunk_overlap=200? (To prevent cutting a sentence in half).
+
+Study Material:
+
+Video: [LangChain RAG Tutorial (Rabbitmetrics or Databutton)].
+
+Action: Go to your main.py. Change chunk_size to 50 and run it. See how bad the answers get. This is "learning by breaking."
+
+Interview Question: "Why is Chunk Overlap important?"
+
+Answer: "If a sentence is cut between chunk A and chunk B, the meaning is lost. Overlap ensures the context flows smoothly across the boundaries."
+
+Day 3: The Glue - LangChain & Chains (3 Hours)
+Goal: Understand the library that connects everything.
+
+Concepts to Master:
+
+Prompts: How we injected the history and context into the template.
+
+Document Loaders: How pypdf extracts raw text.
+
+Memory: The difference between HumanMessage and AIMessage.
+
+Study Material:
+
+Read: LangChain official docs (Focus only on the "Retrieval" section).
+
+Day 4: The Memory - AWS DynamoDB & NoSQL (3 Hours)
+Goal: Understand why we didn't use SQL.
+
+Concepts to Master:
+
+SQL vs NoSQL: Fixed columns vs. Flexible JSON.
+
+Partition Key: Why did we choose SessionId? (Speed).
+
+Latency: Why DynamoDB is faster than PostgreSQL for simple lookups.
+
+Study Material:
+
+Video: [AWS DynamoDB in 10 Minutes].
+
+Action: Go to AWS Console. Create a new item manually. Delete it. Understand the structure.
+
+Interview Question: "How does your system handle 1 million users?"
+
+Answer: "I used DynamoDB with On-Demand capacity. It scales automatically. The Partition Key SessionId ensures that fetching User A's history doesn't require scanning User B's data."
+
+Day 5: The Backend - FastAPI & Async (2 Hours)
+Goal: Explain the async def and await keywords.
+
+Concepts to Master:
+
+Sync vs Async: The "Waiter" analogy. (Sync waiter waits for the cook; Async waiter takes other orders while cooking happens).
+
+Dependency Injection: Depends() (You didn't use much of this, but good to know).
+
+Pydantic: The class QueryRequest(BaseModel) part. Why do we need it? (Validation).
+
+Study Material:
+
+Video: [FastAPI for Beginners (Amigoscode)].
+
+Day 6: Architecture & System Design (3 Hours)
+Goal: Putting it all together.
+
+Concepts to Master:
+
+Multi-Tenancy: Explain "Namespaces" in Pinecone.
+
+Statelessness: Why REST APIs don't remember things (and why we needed DynamoDB).
+
+Flow: Draw the diagram of your project on a piece of paper.
+
+Activity: Draw the diagram.
+
+User -> Frontend -> Backend -> Vector Search -> DynamoDB -> LLM -> Response.
+
+Recommended Resources (Free)
+YouTube Channels (The Best Teachers):
+
+StatQuest with Josh Starmer: For the math (Embeddings/Vectors).
+
+Krish Naik: Great for LangChain and Generative AI roadmaps.
+
+Tech with Tim: For Python/FastAPI.
+
+Be a Better Dev: For AWS/DynamoDB concepts.
+
+Documentation (Bookmark These):
+
+Pinecone Learning Center: (Better than their docs).
+
+LangChain "Use Cases" Section.
+
+Summary
+Total Time: Approx 18 hours.
+
+Pace: 3 hours/day for 6 days.
+
+Strategy: Don't learn "Generative AI." Learn "How my project uses Generative AI."
+
+Final Tip: When you study, look at your code side-by-side with the video. When the video says "Vectors," look at your embeddings = GoogleGenerativeAIEmbeddings line. This connects the theory to your reality.
